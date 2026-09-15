@@ -1,6 +1,7 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import { postChannelMessage } from "./discordApi";
+import { formatEventWhen, formatTime } from "./format";
 import { EventRequestPayload, StashedEventData } from "./types";
 
 function isValidPayload(body: any): body is EventRequestPayload {
@@ -41,25 +42,14 @@ http("formSubmit", async (req: Request, res: Response) => {
 
   const stashed: StashedEventData = { v: 1, ...payload };
 
-  const startDisplay = new Date(payload.startIso).toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  const endDisplay = payload.endIso
-    ? new Date(payload.endIso).toLocaleTimeString("en-US", { timeStyle: "short" })
-    : null;
-  const arrivalDisplay = payload.arrivalIso
-    ? new Date(payload.arrivalIso).toLocaleTimeString("en-US", { timeStyle: "short" })
-    : null;
-
   const embed = {
     title: `New event request: ${payload.title}`,
     color: 0x8a2be2, // dark purple, because of course
     fields: [
       { name: "Type", value: payload.eventType, inline: true },
-      { name: "When", value: endDisplay ? `${startDisplay} – ${endDisplay}` : startDisplay, inline: true },
+      { name: "When", value: formatEventWhen(payload.startIso, payload.endIso), inline: true },
       { name: "Where", value: payload.location, inline: true },
-      ...(arrivalDisplay ? [{ name: "Arrival", value: arrivalDisplay, inline: true }] : []),
+      ...(payload.arrivalIso ? [{ name: "Arrival", value: formatTime(payload.arrivalIso), inline: true }] : []),
       { name: "Requested by", value: payload.requesterName, inline: true },
       { name: "Details", value: payload.description || "(none provided)" },
     ],

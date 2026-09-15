@@ -12,10 +12,13 @@
     "watch": "tsc -p . --watch",
     "start:form-submit": "npm run build && functions-framework --target=formSubmit --source=lib",
     "start:interactions": "npm run build && functions-framework --target=interactions --source=lib",
+    "start:poll-scheduled-events": "npm run build && functions-framework --target=pollScheduledEvents --source=lib",
     "deploy:form-submit": "npm run build && gcloud functions deploy badb-form-submit --gen2 --runtime=nodejs20 --region=us-west1 --source=. --entry-point=formSubmit --trigger-http --allow-unauthenticated --env-vars-file=.env.yaml",
-    "deploy:interactions": "npm run build && gcloud functions deploy badb-interactions --gen2 --runtime=nodejs20 --region=us-west1 --source=. --entry-point=interactions --trigger-http --allow-unauthenticated --env-vars-file=.env.yaml"
+    "deploy:interactions": "npm run build && gcloud functions deploy badb-interactions --gen2 --runtime=nodejs20 --region=us-west1 --source=. --entry-point=interactions --trigger-http --allow-unauthenticated --env-vars-file=.env.yaml",
+    "deploy:poll-scheduled-events": "npm run build && gcloud functions deploy badb-poll-scheduled-events --gen2 --runtime=nodejs20 --region=us-west1 --source=. --entry-point=pollScheduledEvents --trigger-http --no-allow-unauthenticated --env-vars-file=.env.yaml"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^7.11.6",
     "@google-cloud/functions-framework": "^3.4.2",
     "discord-interactions": "^3.4.0"
   },

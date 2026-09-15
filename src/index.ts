@@ -3,3 +3,4 @@
 // deploy can serve either target.
 import "./formSubmit";
 import "./interactions";
+import "./pollScheduledEvents";

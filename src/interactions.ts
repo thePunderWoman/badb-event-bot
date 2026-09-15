@@ -1,7 +1,9 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import { verifyKey } from "discord-interactions";
-import { createGuildScheduledEvent, editMessage } from "./discordApi";
+import { markAnnounced } from "./announced";
+import { createGuildScheduledEvent, editMessage, postChannelMessage } from "./discordApi";
+import { formatEventWhen, formatTime } from "./format";
 import { StashedEventData } from "./types";
 
 const InteractionType = { PING: 1, MESSAGE_COMPONENT: 3 };
@@ -84,9 +86,7 @@ http("interactions", async (req: Request, res: Response) => {
 
       // Discord's Scheduled Event has no dedicated "arrival time" or "type"
       // fields, so fold them into the description text instead.
-      const arrivalNote = stashed.arrivalIso
-        ? `Arrival: ${new Date(stashed.arrivalIso).toLocaleTimeString("en-US", { timeStyle: "short" })}\n\n`
-        : "";
+      const arrivalNote = stashed.arrivalIso ? `Arrival: ${formatTime(stashed.arrivalIso)}\n\n` : "";
       const typeNote = stashed.eventType ? `Type: ${stashed.eventType}\n\n` : "";
 
       const scheduledEvent = await createGuildScheduledEvent(guildId, {
@@ -113,6 +113,34 @@ http("interactions", async (req: Request, res: Response) => {
         ],
         components: [],
       });
+
+      // Best-effort public announcement — the event itself is already
+      // created at this point, so a failure here shouldn't be reported as
+      // an "Action failed" on the admin message.
+      const announcementChannelId = process.env.DISCORD_ANNOUNCEMENT_CHANNEL_ID;
+      if (announcementChannelId) {
+        try {
+          await postChannelMessage(announcementChannelId, {
+            embeds: [
+              {
+                title: `📅 New event: ${stashed.title}`,
+                description: stashed.description || undefined,
+                color: 0x2ecc71,
+                url: eventUrl,
+                fields: [
+                  { name: "Type", value: stashed.eventType, inline: true },
+                  { name: "When", value: formatEventWhen(stashed.startIso, stashed.endIso), inline: true },
+                  { name: "Where", value: stashed.location, inline: true },
+                  ...(stashed.arrivalIso ? [{ name: "Arrival", value: formatTime(stashed.arrivalIso), inline: true }] : []),
+                ],
+              },
+            ],
+          });
+          await markAnnounced(scheduledEvent.id);
+        } catch (err) {
+          console.error("Failed to post announcement", err);
+        }
+      }
     }
   } catch (err) {
     console.error(err);

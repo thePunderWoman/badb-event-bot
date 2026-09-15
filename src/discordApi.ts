@@ -27,6 +27,14 @@ export async function postChannelMessage(channelId: string, body: unknown): Prom
   return res.json();
 }
 
+export async function listGuildScheduledEvents(guildId: string): Promise<any[]> {
+  const res = await discordFetch(`/guilds/${guildId}/scheduled-events`, {
+    method: "GET",
+    headers: botHeaders(),
+  });
+  return res.json();
+}
+
 export async function createGuildScheduledEvent(guildId: string, body: unknown): Promise<any> {
   const res = await discordFetch(`/guilds/${guildId}/scheduled-events`, {
     method: "POST",
