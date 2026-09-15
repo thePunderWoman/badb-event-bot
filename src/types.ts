@@ -3,8 +3,10 @@
 // since these are what Discord's Scheduled Event API requires.
 export interface EventRequestPayload {
   title: string;
+  eventType: string;
   startIso: string;
   endIso?: string;
+  arrivalIso?: string;
   location: string;
   description: string;
   requesterName: string;

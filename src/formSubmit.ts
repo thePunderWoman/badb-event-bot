@@ -1,12 +1,13 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
-import { postChannelMessage } from "../discordApi";
+import { postChannelMessage } from "./discordApi";
 import { EventRequestPayload, StashedEventData } from "./types";
 
 function isValidPayload(body: any): body is EventRequestPayload {
   return (
     body &&
     typeof body.title === "string" &&
+    typeof body.eventType === "string" &&
     typeof body.startIso === "string" &&
     typeof body.location === "string" &&
     typeof body.description === "string" &&
@@ -28,7 +29,7 @@ http("formSubmit", async (req: Request, res: Response) => {
 
   const payload = req.body;
   if (!isValidPayload(payload)) {
-    res.status(400).send("Missing required fields (title, startIso, location, description, requesterName)");
+    res.status(400).send("Missing required fields (title, eventType, startIso, location, description, requesterName)");
     return;
   }
 
@@ -44,13 +45,21 @@ http("formSubmit", async (req: Request, res: Response) => {
     dateStyle: "medium",
     timeStyle: "short",
   });
+  const endDisplay = payload.endIso
+    ? new Date(payload.endIso).toLocaleTimeString("en-US", { timeStyle: "short" })
+    : null;
+  const arrivalDisplay = payload.arrivalIso
+    ? new Date(payload.arrivalIso).toLocaleTimeString("en-US", { timeStyle: "short" })
+    : null;
 
   const embed = {
     title: `New event request: ${payload.title}`,
     color: 0x8a2be2, // dark purple, because of course
     fields: [
-      { name: "When", value: startDisplay, inline: true },
+      { name: "Type", value: payload.eventType, inline: true },
+      { name: "When", value: endDisplay ? `${startDisplay} – ${endDisplay}` : startDisplay, inline: true },
       { name: "Where", value: payload.location, inline: true },
+      ...(arrivalDisplay ? [{ name: "Arrival", value: arrivalDisplay, inline: true }] : []),
       { name: "Requested by", value: payload.requesterName, inline: true },
       { name: "Details", value: payload.description || "(none provided)" },
     ],

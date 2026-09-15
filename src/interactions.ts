@@ -1,7 +1,7 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import { verifyKey } from "discord-interactions";
-import { createGuildScheduledEvent, editMessage } from "../discordApi";
+import { createGuildScheduledEvent, editMessage } from "./discordApi";
 import { StashedEventData } from "./types";
 
 const InteractionType = { PING: 1, MESSAGE_COMPONENT: 3 };
@@ -82,12 +82,19 @@ http("interactions", async (req: Request, res: Response) => {
       const guildId = process.env.DISCORD_GUILD_ID;
       if (!guildId) throw new Error("DISCORD_GUILD_ID is not set");
 
+      // Discord's Scheduled Event has no dedicated "arrival time" or "type"
+      // fields, so fold them into the description text instead.
+      const arrivalNote = stashed.arrivalIso
+        ? `Arrival: ${new Date(stashed.arrivalIso).toLocaleTimeString("en-US", { timeStyle: "short" })}\n\n`
+        : "";
+      const typeNote = stashed.eventType ? `Type: ${stashed.eventType}\n\n` : "";
+
       const scheduledEvent = await createGuildScheduledEvent(guildId, {
         name: stashed.title,
         privacy_level: PRIVACY_LEVEL_GUILD_ONLY,
         scheduled_start_time: stashed.startIso,
         scheduled_end_time: stashed.endIso ?? new Date(new Date(stashed.startIso).getTime() + 3 * 60 * 60 * 1000).toISOString(),
-        description: stashed.description,
+        description: `${typeNote}${arrivalNote}${stashed.description}`,
         entity_type: ENTITY_TYPE_EXTERNAL,
         entity_metadata: { location: stashed.location },
         status: EVENT_STATUS_SCHEDULED,

@@ -52,8 +52,8 @@ should see the embed appear in the admin channel within a few seconds.
 - Events are created as `EXTERNAL` (physical location) rather than tied to
   a voice channel — change `entity_type` in `interactions.ts` if that's
   ever wrong for a meetup.
-- No end time on the form? We default to a 3-hour block. Adjust the
-  fallback in `interactions.ts` if your events usually run longer/shorter.
+- The form now collects an explicit End Time, but `interactions.ts` still
+  falls back to a 3-hour block if `endIso` is ever missing.
 - If you ever want role-gating on who can click the buttons, the member's
   roles are available on `interaction.member.roles` inside the handler.
 - Local testing: `npm run start:form-submit` or `npm run start:interactions`
