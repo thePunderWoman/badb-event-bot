@@ -1,0 +1,26 @@
+{
+  "name": "badb-event-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bay Area Droid Builders - Google Form to Discord event bot",
+  "main": "lib/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "start:form-submit": "npm run build && functions-framework --target=formSubmit --source=lib",
+    "start:interactions": "npm run build && functions-framework --target=interactions --source=lib",
+    "deploy:form-submit": "npm run build && gcloud functions deploy badb-form-submit --gen2 --runtime=nodejs20 --region=us-west1 --source=. --entry-point=formSubmit --trigger-http --allow-unauthenticated --env-vars-file=.env.yaml",
+    "deploy:interactions": "npm run build && gcloud functions deploy badb-interactions --gen2 --runtime=nodejs20 --region=us-west1 --source=. --entry-point=interactions --trigger-http --allow-unauthenticated --env-vars-file=.env.yaml"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.2",
+    "discord-interactions": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

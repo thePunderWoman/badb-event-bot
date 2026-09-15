@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Compiled output
+lib/
+
+# Secrets — never commit real credentials
+.env
+.env.yaml
+.env.*.local
+
+# OS/editor cruft
+.DS_Store
+*.log
+.vscode/
