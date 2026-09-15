@@ -1,6 +1,6 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
-import { postChannelMessage } from "./discordApi";
+import { postChannelMessage } from "../discordApi";
 import { EventRequestPayload, StashedEventData } from "./types";
 
 function isValidPayload(body: any): body is EventRequestPayload {

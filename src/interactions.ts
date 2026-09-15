@@ -1,7 +1,7 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import { verifyKey } from "discord-interactions";
-import { createGuildScheduledEvent, editMessage } from "./discordApi";
+import { createGuildScheduledEvent, editMessage } from "../discordApi";
 import { StashedEventData } from "./types";
 
 const InteractionType = { PING: 1, MESSAGE_COMPONENT: 3 };
