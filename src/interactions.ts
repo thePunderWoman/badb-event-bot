@@ -1,9 +1,9 @@
 import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import { verifyKey } from "discord-interactions";
-import { markAnnounced } from "./announced";
-import { createGuildScheduledEvent, editMessage, postChannelMessage } from "./discordApi";
-import { formatEventWhen, formatTime } from "./format";
+import { editMessage } from "./discordApi";
+import { buildRichDescription, resolveEndIso } from "./format";
+import { createCalendarEvent } from "./googleCalendar";
 import { StashedEventData } from "./types";
 
 const InteractionType = { PING: 1, MESSAGE_COMPONENT: 3 };
@@ -11,12 +11,6 @@ const InteractionResponseType = {
   PONG: 1,
   DEFERRED_UPDATE_MESSAGE: 6,
 };
-
-// GUILD_SCHEDULED_EVENT_ENTITY_TYPE.EXTERNAL — since droid meetups happen at
-// physical venues rather than in a Discord voice channel.
-const ENTITY_TYPE_EXTERNAL = 3;
-const EVENT_STATUS_SCHEDULED = 1;
-const PRIVACY_LEVEL_GUILD_ONLY = 2;
 
 function parseStash(footerText: string | undefined): StashedEventData | null {
   if (!footerText) return null;
@@ -80,67 +74,32 @@ http("interactions", async (req: Request, res: Response) => {
       return;
     }
 
+    // Approving only adds the event to Google Calendar — Calendar is the
+    // source of truth, so the Discord Scheduled Event and the #events
+    // announcement are created automatically by pollScheduledEvents.ts once
+    // it picks up this new Calendar event (within a few minutes).
     if (customId === "create_event" && stashed) {
-      const guildId = process.env.DISCORD_GUILD_ID;
-      if (!guildId) throw new Error("DISCORD_GUILD_ID is not set");
+      const richDescription = buildRichDescription(stashed.description, stashed.eventType, stashed.arrivalIso);
+      const endIso = resolveEndIso(stashed.startIso, stashed.endIso);
 
-      // Discord's Scheduled Event has no dedicated "arrival time" or "type"
-      // fields, so fold them into the description text instead.
-      const arrivalNote = stashed.arrivalIso ? `Arrival: ${formatTime(stashed.arrivalIso)}\n\n` : "";
-      const typeNote = stashed.eventType ? `Type: ${stashed.eventType}\n\n` : "";
-
-      const scheduledEvent = await createGuildScheduledEvent(guildId, {
-        name: stashed.title,
-        privacy_level: PRIVACY_LEVEL_GUILD_ONLY,
-        scheduled_start_time: stashed.startIso,
-        scheduled_end_time: stashed.endIso ?? new Date(new Date(stashed.startIso).getTime() + 3 * 60 * 60 * 1000).toISOString(),
-        description: `${typeNote}${arrivalNote}${stashed.description}`,
-        entity_type: ENTITY_TYPE_EXTERNAL,
-        entity_metadata: { location: stashed.location },
-        status: EVENT_STATUS_SCHEDULED,
+      await createCalendarEvent({
+        title: stashed.title,
+        description: richDescription,
+        startIso: stashed.startIso,
+        endIso,
+        location: stashed.location,
       });
-
-      const eventUrl = `https://discord.com/events/${guildId}/${scheduledEvent.id}`;
 
       await editMessage(channelId, messageId, {
         embeds: [
           {
             ...embed,
             color: 0x2ecc71,
-            title: `✅ Event created — ${embed.title?.replace(/^New event request: /, "")}`,
-            url: eventUrl,
+            title: `✅ Approved — added to Calendar: ${embed.title?.replace(/^New event request: /, "")}`,
           },
         ],
         components: [],
       });
-
-      // Best-effort public announcement — the event itself is already
-      // created at this point, so a failure here shouldn't be reported as
-      // an "Action failed" on the admin message.
-      const announcementChannelId = process.env.DISCORD_ANNOUNCEMENT_CHANNEL_ID;
-      if (announcementChannelId) {
-        try {
-          await postChannelMessage(announcementChannelId, {
-            embeds: [
-              {
-                title: `📅 New event: ${stashed.title}`,
-                description: stashed.description || undefined,
-                color: 0x2ecc71,
-                url: eventUrl,
-                fields: [
-                  { name: "Type", value: stashed.eventType, inline: true },
-                  { name: "When", value: formatEventWhen(stashed.startIso, stashed.endIso), inline: true },
-                  { name: "Where", value: stashed.location, inline: true },
-                  ...(stashed.arrivalIso ? [{ name: "Arrival", value: formatTime(stashed.arrivalIso), inline: true }] : []),
-                ],
-              },
-            ],
-          });
-          await markAnnounced(scheduledEvent.id);
-        } catch (err) {
-          console.error("Failed to post announcement", err);
-        }
-      }
     }
   } catch (err) {
     console.error(err);

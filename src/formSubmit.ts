@@ -69,7 +69,7 @@ http("formSubmit", async (req: Request, res: Response) => {
             {
               type: 2, // button
               style: 3, // green
-              label: "Create Event",
+              label: "Approve",
               custom_id: "create_event",
             },
             {

@@ -4,3 +4,4 @@
 import "./formSubmit";
 import "./interactions";
 import "./pollScheduledEvents";
+import "./sendEventDigest";
