@@ -47,18 +47,18 @@ function eventWhen(event: calendar_v3.Schema$Event): string {
   return formatEventWhen(startIso, endIso);
 }
 
+// Callers only invoke this with a non-empty list — sendEventDigest skips
+// sending entirely when there's nothing upcoming.
 function buildPlainTextBody(events: calendar_v3.Schema$Event[]): string {
-  const eventsBlock = events.length
-    ? events
-        .map((event) => {
-          const when = eventWhen(event);
-          const lines = [event.summary || "Untitled event", when];
-          if (event.location) lines.push(event.location);
-          if (event.description) lines.push(event.description);
-          return lines.join("\n");
-        })
-        .join("\n\n")
-    : "No upcoming events right now — check back soon!";
+  const eventsBlock = events
+    .map((event) => {
+      const when = eventWhen(event);
+      const lines = [event.summary || "Untitled event", when];
+      if (event.location) lines.push(event.location);
+      if (event.description) lines.push(event.description);
+      return lines.join("\n");
+    })
+    .join("\n\n");
 
   return [
     "Hey Builders!",
@@ -73,16 +73,14 @@ function buildPlainTextBody(events: calendar_v3.Schema$Event[]): string {
 }
 
 function buildEmailHtml(events: calendar_v3.Schema$Event[]): string {
-  const eventsHtml = events.length
-    ? events
-        .map((event) => {
-          const when = eventWhen(event);
-          const location = event.location ? `<br>${escapeHtml(event.location)}` : "";
-          const description = event.description ? `<br>${escapeHtml(event.description)}` : "";
-          return `<p><strong>${escapeHtml(event.summary || "Untitled event")}</strong><br>${escapeHtml(when)}${location}${description}</p>`;
-        })
-        .join("")
-    : "<p>No upcoming events right now — check back soon!</p>";
+  const eventsHtml = events
+    .map((event) => {
+      const when = eventWhen(event);
+      const location = event.location ? `<br>${escapeHtml(event.location)}` : "";
+      const description = event.description ? `<br>${escapeHtml(event.description)}` : "";
+      return `<p><strong>${escapeHtml(event.summary || "Untitled event")}</strong><br>${escapeHtml(when)}${location}${description}</p>`;
+    })
+    .join("");
 
   return `
 <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #222;">
@@ -137,6 +135,14 @@ http("sendEventDigest", async (req: Request, res: Response) => {
   });
 
   const events = eventsRes.data.items ?? [];
+  if (events.length === 0) {
+    // Nothing to report — still counts as this cycle's run so the
+    // bi-weekly cadence stays on schedule, just with nothing sent.
+    if (!force) await flipDueState();
+    res.status(200).send("skipped — no upcoming events");
+    return;
+  }
+
   const plainTextBody = buildPlainTextBody(events);
   const subject = "Upcoming Bay Area Droid Builder Events";
 
