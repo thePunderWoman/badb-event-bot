@@ -78,6 +78,11 @@ bi-weekly on/off toggle.
    npm run deploy:poll-scheduled-events
    npm run deploy:send-event-digest
    ```
+   `interactions` is deployed with `--min-instances=1` so one instance is
+   always warm. Discord gives a button click only 3 seconds to be
+   answered, and a cold start alone can use most of that. The idle instance
+   is billed continuously (roughly a few dollars a month at the default
+   size); drop the flag if that isn't worth it.
    The first two print a **Trigger URL** — save both. `pollScheduledEvents`
    and `sendEventDigest` are deployed with `--no-allow-unauthenticated`
    since only Cloud Scheduler should be able to call them.
