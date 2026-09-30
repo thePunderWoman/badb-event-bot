@@ -16,7 +16,13 @@ Calendar; nothing is ever written back from Discord to Calendar.
   Endpoint. Verifies the request is really from Discord, then on
   **Approve** adds the event to Google Calendar — nothing else. The Discord
   event and public announcement follow automatically once `pollScheduledEvents`
-  picks up the new Calendar entry.
+  picks up the new Calendar entry. The Calendar event's ID is derived from
+  the request's Discord message ID, so clicking Approve twice (or retrying
+  after a failure) never creates a duplicate. The outcome (✅ approved,
+  ❌ dismissed, or ⚠️ not added, with the reason) is always written onto the
+  request message itself, so check the message if Discord says "This
+  interaction failed". That toast only means the reply took longer than
+  Discord's 3-second limit.
 - **`pollScheduledEvents`** (Cloud Function, run every 5 minutes via Cloud
   Scheduler): the core sync. Uses the Calendar API's incremental sync (a
   `syncToken`, stored in Firestore) so each run only sees what actually
@@ -35,7 +41,9 @@ Calendar; nothing is ever written back from Discord to Calendar.
 Firestore (`(default)` database, Native mode) holds two small collections:
 `calendarEvents` (Calendar event ID → mirrored Discord event ID + last-seen
 fields, so updates/cancellations can be detected and applied idempotently)
-and `calendarSync` (the incremental sync cursor). `digestState` holds the
+and `calendarSync` (the incremental sync cursor, plus a short-lived lock so
+two overlapping `pollScheduledEvents` runs — say a manual run during a
+scheduled one — can't both mirror the same new event into Discord). `digestState` holds the
 bi-weekly on/off toggle.
 
 ## One-time setup
@@ -70,6 +78,11 @@ bi-weekly on/off toggle.
    npm run deploy:poll-scheduled-events
    npm run deploy:send-event-digest
    ```
+   `interactions` is deployed with `--min-instances=1` so one instance is
+   always warm. Discord gives a button click only 3 seconds to be
+   answered, and a cold start alone can use most of that. The idle instance
+   is billed continuously (roughly a few dollars a month at the default
+   size); drop the flag if that isn't worth it.
    The first two print a **Trigger URL** — save both. `pollScheduledEvents`
    and `sendEventDigest` are deployed with `--no-allow-unauthenticated`
    since only Cloud Scheduler should be able to call them.
@@ -118,7 +131,10 @@ bi-weekly on/off toggle.
 
 ## Testing
 
-Submit a test response through the actual Google Form (Apps Script
+Unit tests: `npm test` (vitest; runs pinned to UTC like Cloud Functions so
+timezone bugs aren't hidden by your machine's local zone).
+
+End to end: submit a test response through the actual Google Form (Apps Script
 `onFormSubmit` triggers don't fire from manually editing the sheet). You
 should see the embed appear in the admin channel within a few seconds.
 Click **Approve** and confirm the event shows up in Google Calendar —
@@ -134,6 +150,9 @@ Discord and the `#events` announcement follow within the next
 - The form collects an explicit End Time, but `resolveEndIso` in
   `format.ts` still falls back to a 3-hour block if `endIso` is ever
   missing.
+- All displayed times (the admin embed, announcements, the digest, and the
+  "Arrival" line in event descriptions) are shown in Pacific time —
+  `EVENT_TIME_ZONE` in `format.ts`.
 - Only meaningful field changes (title, start/end time, location,
   description) trigger an "EVENT UPDATE" — incidental Calendar metadata
   touches are ignored, so `#events` doesn't get noisy.

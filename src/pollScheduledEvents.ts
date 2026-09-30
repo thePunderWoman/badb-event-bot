@@ -2,8 +2,16 @@ import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import type { calendar_v3 } from "googleapis";
 import { createGuildScheduledEvent, postChannelMessage, updateGuildScheduledEvent } from "./discordApi";
-import { EventMapping, getEventMapping, getSyncToken, saveEventMapping, saveSyncToken } from "./eventSync";
-import { formatEventWhen } from "./format";
+import {
+  acquirePollLock,
+  EventMapping,
+  getEventMapping,
+  getSyncToken,
+  releasePollLock,
+  saveEventMapping,
+  saveSyncToken,
+} from "./eventSync";
+import { formatCalendarEventWhen } from "./format";
 import { listCalendarChanges } from "./googleCalendar";
 
 // GUILD_SCHEDULED_EVENT_ENTITY_TYPE.EXTERNAL — since droid meetups happen at
@@ -33,21 +41,7 @@ function hasMeaningfulChange(a: EventMapping, b: ReturnType<typeof extractFields
   );
 }
 
-// Google Calendar is the source of truth for events; this mirrors it into
-// Discord. Invoked on a schedule (Cloud Scheduler, every few minutes)
-// rather than by Discord or Calendar directly. Uses Calendar's incremental
-// sync (a syncToken) so each run only sees what actually changed —
-// created, updated, or cancelled — since the last run.
-http("pollScheduledEvents", async (_req: Request, res: Response) => {
-  const guildId = process.env.DISCORD_GUILD_ID;
-  const announcementChannelId = process.env.DISCORD_ANNOUNCEMENT_CHANNEL_ID;
-  const calendarId = process.env.GOOGLE_CALENDAR_ID;
-
-  if (!guildId || !announcementChannelId || !calendarId) {
-    res.status(500).send("DISCORD_GUILD_ID / DISCORD_ANNOUNCEMENT_CHANNEL_ID / GOOGLE_CALENDAR_ID not set");
-    return;
-  }
-
+async function syncCalendarToDiscord(guildId: string, announcementChannelId: string, calendarId: string): Promise<string> {
   const syncToken = await getSyncToken();
   const { events, nextSyncToken } = await listCalendarChanges(calendarId, syncToken);
 
@@ -93,7 +87,7 @@ http("pollScheduledEvents", async (_req: Request, res: Response) => {
               description: fields.description || undefined,
               color: 0x2ecc71,
               fields: [
-                { name: "When", value: formatEventWhen(fields.startIso, fields.endIso), inline: true },
+                { name: "When", value: formatCalendarEventWhen(fields.startIso, fields.endIso), inline: true },
                 ...(fields.location ? [{ name: "Where", value: fields.location, inline: true }] : []),
               ],
             },
@@ -116,7 +110,7 @@ http("pollScheduledEvents", async (_req: Request, res: Response) => {
               description: fields.description || undefined,
               color: 0xf1c40f,
               fields: [
-                { name: "When", value: formatEventWhen(fields.startIso, fields.endIso), inline: true },
+                { name: "When", value: formatCalendarEventWhen(fields.startIso, fields.endIso), inline: true },
                 ...(fields.location ? [{ name: "Where", value: fields.location, inline: true }] : []),
               ],
             },
@@ -135,5 +129,37 @@ http("pollScheduledEvents", async (_req: Request, res: Response) => {
   // stuck cursor would mean re-processing the whole backlog every run.
   await saveSyncToken(nextSyncToken);
 
-  res.status(200).send(`checked ${events.length}, created ${created}, updated ${updated}, cancelled ${cancelled}`);
+  return `checked ${events.length}, created ${created}, updated ${updated}, cancelled ${cancelled}`;
+}
+
+// Google Calendar is the source of truth for events; this mirrors it into
+// Discord. Invoked on a schedule (Cloud Scheduler, every few minutes)
+// rather than by Discord or Calendar directly. Uses Calendar's incremental
+// sync (a syncToken) so each run only sees what actually changed —
+// created, updated, or cancelled — since the last run.
+http("pollScheduledEvents", async (_req: Request, res: Response) => {
+  const guildId = process.env.DISCORD_GUILD_ID;
+  const announcementChannelId = process.env.DISCORD_ANNOUNCEMENT_CHANNEL_ID;
+  const calendarId = process.env.GOOGLE_CALENDAR_ID;
+
+  if (!guildId || !announcementChannelId || !calendarId) {
+    res.status(500).send("DISCORD_GUILD_ID / DISCORD_ANNOUNCEMENT_CHANNEL_ID / GOOGLE_CALENDAR_ID not set");
+    return;
+  }
+
+  const lockOwner = await acquirePollLock();
+  if (!lockOwner) {
+    res.status(200).send("skipped — another poll run is in progress");
+    return;
+  }
+
+  // Released before responding: work after the response runs with
+  // throttled CPU on Cloud Functions and might not happen.
+  let summary: string;
+  try {
+    summary = await syncCalendarToDiscord(guildId, announcementChannelId, calendarId);
+  } finally {
+    await releasePollLock(lockOwner);
+  }
+  res.status(200).send(summary);
 });

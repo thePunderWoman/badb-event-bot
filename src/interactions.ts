@@ -2,24 +2,13 @@ import { http } from "@google-cloud/functions-framework";
 import type { Request, Response } from "@google-cloud/functions-framework";
 import { verifyKey } from "discord-interactions";
 import { editMessage } from "./discordApi";
-import { buildRichDescription, resolveEndIso } from "./format";
-import { createCalendarEvent } from "./googleCalendar";
-import { StashedEventData } from "./types";
+import { handleEventRequestAction } from "./eventRequestActions";
 
 const InteractionType = { PING: 1, MESSAGE_COMPONENT: 3 };
 const InteractionResponseType = {
   PONG: 1,
   DEFERRED_UPDATE_MESSAGE: 6,
 };
-
-function parseStash(footerText: string | undefined): StashedEventData | null {
-  if (!footerText) return null;
-  try {
-    return JSON.parse(footerText);
-  } catch {
-    return null;
-  }
-}
 
 http("interactions", async (req: Request, res: Response) => {
   const signature = req.header("x-signature-ed25519");
@@ -53,63 +42,29 @@ http("interactions", async (req: Request, res: Response) => {
     return;
   }
 
-  // Ack immediately (Discord requires a response within 3s); we do the
-  // real work after and patch the message in as a follow-up.
-  res.status(200).json({ type: InteractionResponseType.DEFERRED_UPDATE_MESSAGE });
-
   const channelId = interaction.channel_id ?? interaction.channel?.id;
   const messageId = interaction.message?.id;
   const embed = interaction.message?.embeds?.[0];
-  const stashed = parseStash(embed?.footer?.text);
-  const customId = interaction.data?.custom_id;
 
-  if (!channelId || !messageId || !embed) return;
-
-  try {
-    if (customId === "dismiss") {
-      await editMessage(channelId, messageId, {
-        embeds: [{ ...embed, color: 0x555555, title: `❌ Dismissed — ${embed.title?.replace(/^New event request: /, "")}` }],
-        components: [],
-      });
-      return;
-    }
-
-    // Approving only adds the event to Google Calendar — Calendar is the
-    // source of truth, so the Discord Scheduled Event and the #events
-    // announcement are created automatically by pollScheduledEvents.ts once
-    // it picks up this new Calendar event (within a few minutes).
-    if (customId === "create_event" && stashed) {
-      const richDescription = buildRichDescription(stashed.description, stashed.eventType, stashed.arrivalIso);
-      const endIso = resolveEndIso(stashed.startIso, stashed.endIso);
-
-      await createCalendarEvent({
-        title: stashed.title,
-        description: richDescription,
-        startIso: stashed.startIso,
-        endIso,
-        location: stashed.location,
-      });
-
-      await editMessage(channelId, messageId, {
-        embeds: [
-          {
-            ...embed,
-            color: 0x2ecc71,
-            title: `✅ Approved — added to Calendar: ${embed.title?.replace(/^New event request: /, "")}`,
-          },
-        ],
-        components: [],
-      });
-    }
-  } catch (err) {
-    console.error(err);
-    // Best-effort: leave a note on the message rather than failing silently.
-    try {
-      await editMessage(channelId, messageId, {
-        embeds: [{ ...embed, color: 0xe74c3c, title: `⚠️ Action failed — ${embed.title}` }],
-      });
-    } catch {
-      /* nothing more we can do */
+  // All the work happens *before* responding. Cloud Functions throttles CPU
+  // once the response is sent, so work left for afterwards can stall or
+  // never finish — leaving the buttons in place with no sign of whether
+  // anything happened. The outcome is written onto the message itself via
+  // the bot API (not the interaction response), so it shows up even when
+  // this takes longer than Discord's 3-second window and Discord shows the
+  // clicker "This interaction failed".
+  if (channelId && messageId && embed) {
+    const edit = await handleEventRequestAction(interaction.data?.custom_id, messageId, embed);
+    if (edit) {
+      try {
+        await editMessage(channelId, messageId, edit);
+      } catch (err) {
+        // Approve is idempotent, so the buttons (still there) can be
+        // clicked again to retry and get the outcome reported.
+        console.error(err);
+      }
     }
   }
+
+  res.status(200).json({ type: InteractionResponseType.DEFERRED_UPDATE_MESSAGE });
 });

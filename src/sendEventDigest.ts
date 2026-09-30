@@ -4,7 +4,7 @@ import { Firestore } from "@google-cloud/firestore";
 import type { calendar_v3 } from "googleapis";
 import nodemailer from "nodemailer";
 import { postChannelMessage } from "./discordApi";
-import { formatEventWhen } from "./format";
+import { formatCalendarEventWhen } from "./format";
 import { getCalendarClient } from "./googleAuth";
 
 const firestore = new Firestore();
@@ -32,19 +32,10 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Google Calendar's all-day end date is exclusive — a 3-day all-day event
-// (25th-27th) stores end.date as the 28th. Shift it back a day so the
-// digest shows the last real day of the event instead of the day after.
 function eventWhen(event: calendar_v3.Schema$Event): string {
-  const isAllDay = !event.start?.dateTime;
   const startIso = event.start?.dateTime ?? event.start?.date ?? "";
-  let endIso = event.end?.dateTime ?? event.end?.date ?? undefined;
-  if (endIso && isAllDay) {
-    const d = new Date(endIso);
-    d.setUTCDate(d.getUTCDate() - 1);
-    endIso = d.toISOString();
-  }
-  return formatEventWhen(startIso, endIso);
+  const endIso = event.end?.dateTime ?? event.end?.date ?? undefined;
+  return formatCalendarEventWhen(startIso, endIso);
 }
 
 // Callers only invoke this with a non-empty list — sendEventDigest skips
