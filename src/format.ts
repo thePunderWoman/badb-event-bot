@@ -26,6 +26,18 @@ export function formatEventWhen(startIso: string, endIso?: string): string {
   return `${startDisplay} – ${formatDateTime(endIso)}`;
 }
 
+// Formats a Calendar event's raw start/end (a dateTime, or a bare date for
+// all-day events). Calendar's all-day end date is exclusive — a 3-day event
+// on the 25th–27th stores end.date as the 28th — so it's shifted back a day
+// to show the last real day, and a single-day event shows just its date.
+export function formatCalendarEventWhen(startIso: string, endIso?: string): string {
+  if (!endIso || !DATE_ONLY.test(endIso)) return formatEventWhen(startIso, endIso);
+  const lastDay = new Date(endIso);
+  lastDay.setUTCDate(lastDay.getUTCDate() - 1);
+  const lastDayIso = lastDay.toISOString().slice(0, 10);
+  return formatEventWhen(startIso, lastDayIso === startIso ? undefined : lastDayIso);
+}
+
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", { timeStyle: "short", timeZone: EVENT_TIME_ZONE });
 }

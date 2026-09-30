@@ -3,7 +3,7 @@ import type { Request, Response } from "@google-cloud/functions-framework";
 import type { calendar_v3 } from "googleapis";
 import { createGuildScheduledEvent, postChannelMessage, updateGuildScheduledEvent } from "./discordApi";
 import { EventMapping, getEventMapping, getSyncToken, saveEventMapping, saveSyncToken } from "./eventSync";
-import { formatEventWhen } from "./format";
+import { formatCalendarEventWhen } from "./format";
 import { listCalendarChanges } from "./googleCalendar";
 
 // GUILD_SCHEDULED_EVENT_ENTITY_TYPE.EXTERNAL — since droid meetups happen at
@@ -93,7 +93,7 @@ http("pollScheduledEvents", async (_req: Request, res: Response) => {
               description: fields.description || undefined,
               color: 0x2ecc71,
               fields: [
-                { name: "When", value: formatEventWhen(fields.startIso, fields.endIso), inline: true },
+                { name: "When", value: formatCalendarEventWhen(fields.startIso, fields.endIso), inline: true },
                 ...(fields.location ? [{ name: "Where", value: fields.location, inline: true }] : []),
               ],
             },
@@ -116,7 +116,7 @@ http("pollScheduledEvents", async (_req: Request, res: Response) => {
               description: fields.description || undefined,
               color: 0xf1c40f,
               fields: [
-                { name: "When", value: formatEventWhen(fields.startIso, fields.endIso), inline: true },
+                { name: "When", value: formatCalendarEventWhen(fields.startIso, fields.endIso), inline: true },
                 ...(fields.location ? [{ name: "Where", value: fields.location, inline: true }] : []),
               ],
             },
