@@ -41,7 +41,9 @@ Calendar; nothing is ever written back from Discord to Calendar.
 Firestore (`(default)` database, Native mode) holds two small collections:
 `calendarEvents` (Calendar event ID → mirrored Discord event ID + last-seen
 fields, so updates/cancellations can be detected and applied idempotently)
-and `calendarSync` (the incremental sync cursor). `digestState` holds the
+and `calendarSync` (the incremental sync cursor, plus a short-lived lock so
+two overlapping `pollScheduledEvents` runs — say a manual run during a
+scheduled one — can't both mirror the same new event into Discord). `digestState` holds the
 bi-weekly on/off toggle.
 
 ## One-time setup

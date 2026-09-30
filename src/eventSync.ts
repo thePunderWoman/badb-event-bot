@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Firestore } from "@google-cloud/firestore";
 
 // Google Calendar is the source of truth; this tracks how each Calendar
@@ -7,6 +8,7 @@ import { Firestore } from "@google-cloud/firestore";
 const firestore = new Firestore();
 const EVENTS_COLLECTION = "calendarEvents";
 const SYNC_STATE_DOC = firestore.collection("calendarSync").doc("state");
+const POLL_LOCK_DOC = firestore.collection("calendarSync").doc("pollLock");
 
 export interface EventMapping {
   discordEventId: string;
@@ -34,4 +36,34 @@ export async function getEventMapping(calendarEventId: string): Promise<EventMap
 
 export async function saveEventMapping(calendarEventId: string, mapping: EventMapping): Promise<void> {
   await firestore.collection(EVENTS_COLLECTION).doc(calendarEventId).set(mapping);
+}
+
+// Two overlapping poll runs (e.g. a manual `gcloud scheduler jobs run`
+// during a scheduled one) would read the same syncToken, see the same new
+// Calendar event with no mapping yet, and each create a Discord event for
+// it. So a run first takes this lease and skips if another run holds it.
+// The lease expires on its own, so a run that crashes (or times out) can't
+// wedge the sync; it must outlast the function's timeout (60s by default)
+// but stay under the 5-minute schedule.
+export const POLL_LOCK_LEASE_MS = 4 * 60 * 1000;
+
+// Returns a token for releasePollLock, or undefined if another run holds it.
+export async function acquirePollLock(now = Date.now()): Promise<string | undefined> {
+  return firestore.runTransaction(async (tx) => {
+    const snap = await tx.get(POLL_LOCK_DOC);
+    const lockedUntil: number = snap.data()?.lockedUntil ?? 0;
+    if (lockedUntil > now) return undefined;
+    const owner = randomUUID();
+    tx.set(POLL_LOCK_DOC, { owner, lockedUntil: now + POLL_LOCK_LEASE_MS });
+    return owner;
+  });
+}
+
+// Only clears the lease if it's still ours — if this run overran its lease
+// and another run has since taken it, that run's lease is left alone.
+export async function releasePollLock(owner: string): Promise<void> {
+  await firestore.runTransaction(async (tx) => {
+    const snap = await tx.get(POLL_LOCK_DOC);
+    if (snap.data()?.owner === owner) tx.delete(POLL_LOCK_DOC);
+  });
 }
