@@ -42,7 +42,7 @@ function eventWhen(event: calendar_v3.Schema$Event): string {
   if (endIso && isAllDay) {
     const d = new Date(endIso);
     d.setUTCDate(d.getUTCDate() - 1);
-    endIso = d.toISOString();
+    endIso = d.toISOString().slice(0, 10); // keep it a bare date so it's formatted as one
   }
   return formatEventWhen(startIso, endIso);
 }

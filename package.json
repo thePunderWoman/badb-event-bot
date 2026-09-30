@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -p . --watch",
+    "test": "vitest run",
     "start:form-submit": "npm run build && functions-framework --target=formSubmit --source=lib",
     "start:interactions": "npm run build && functions-framework --target=interactions --source=lib",
     "start:poll-scheduled-events": "npm run build && functions-framework --target=pollScheduledEvents --source=lib",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^6.4.24",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.7"
   }
 }

@@ -15,3 +15,7 @@
 
 node_modules
 #!include:.gitignore
+
+# Tests are not needed at runtime
+test/
+vitest.config.ts

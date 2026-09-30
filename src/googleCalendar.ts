@@ -6,9 +6,12 @@ export interface CalendarChanges {
   nextSyncToken: string;
 }
 
+function httpStatus(err: any): number | undefined {
+  return err?.status ?? err?.response?.status ?? (err?.code ? Number(err.code) : undefined);
+}
+
 function isGoneError(err: any): boolean {
-  const status = err?.code ? Number(err.code) : err?.response?.status;
-  return status === 410;
+  return httpStatus(err) === 410;
 }
 
 async function fetchChanges(calendarId: string, syncToken?: string): Promise<CalendarChanges> {
@@ -50,7 +53,12 @@ export async function listCalendarChanges(calendarId: string, syncToken?: string
   }
 }
 
+// The caller supplies the event ID (Calendar allows base32hex — a–v, 0–9 —
+// 5–1024 chars), which makes this idempotent: inserting the same ID again
+// is rejected with 409 Conflict, so a repeated Approve click or a retry
+// after a timeout can never create a duplicate event.
 export async function createCalendarEvent(params: {
+  id: string;
   title: string;
   description: string;
   startIso: string;
@@ -61,16 +69,23 @@ export async function createCalendarEvent(params: {
   if (!calendarId) throw new Error("GOOGLE_CALENDAR_ID is not set");
 
   const calendar = await getCalendarClient();
-  const res = await calendar.events.insert({
-    calendarId,
-    requestBody: {
-      summary: params.title,
-      description: params.description,
-      location: params.location,
-      start: { dateTime: params.startIso },
-      end: { dateTime: params.endIso },
-    },
-  });
+  let res;
+  try {
+    res = await calendar.events.insert({
+      calendarId,
+      requestBody: {
+        id: params.id,
+        summary: params.title,
+        description: params.description,
+        location: params.location,
+        start: { dateTime: params.startIso },
+        end: { dateTime: params.endIso },
+      },
+    });
+  } catch (err) {
+    if (httpStatus(err) === 409) return params.id; // already created by an earlier attempt
+    throw err;
+  }
 
   if (!res.data.id) throw new Error("Calendar API did not return an event id");
   return res.data.id;

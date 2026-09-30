@@ -16,7 +16,13 @@ Calendar; nothing is ever written back from Discord to Calendar.
   Endpoint. Verifies the request is really from Discord, then on
   **Approve** adds the event to Google Calendar — nothing else. The Discord
   event and public announcement follow automatically once `pollScheduledEvents`
-  picks up the new Calendar entry.
+  picks up the new Calendar entry. The Calendar event's ID is derived from
+  the request's Discord message ID, so clicking Approve twice (or retrying
+  after a failure) never creates a duplicate. The outcome (✅ approved,
+  ❌ dismissed, or ⚠️ not added, with the reason) is always written onto the
+  request message itself, so check the message if Discord says "This
+  interaction failed". That toast only means the reply took longer than
+  Discord's 3-second limit.
 - **`pollScheduledEvents`** (Cloud Function, run every 5 minutes via Cloud
   Scheduler): the core sync. Uses the Calendar API's incremental sync (a
   `syncToken`, stored in Firestore) so each run only sees what actually
@@ -118,7 +124,10 @@ bi-weekly on/off toggle.
 
 ## Testing
 
-Submit a test response through the actual Google Form (Apps Script
+Unit tests: `npm test` (vitest; runs pinned to UTC like Cloud Functions so
+timezone bugs aren't hidden by your machine's local zone).
+
+End to end: submit a test response through the actual Google Form (Apps Script
 `onFormSubmit` triggers don't fire from manually editing the sheet). You
 should see the embed appear in the admin channel within a few seconds.
 Click **Approve** and confirm the event shows up in Google Calendar —
@@ -134,6 +143,9 @@ Discord and the `#events` announcement follow within the next
 - The form collects an explicit End Time, but `resolveEndIso` in
   `format.ts` still falls back to a 3-hour block if `endIso` is ever
   missing.
+- All displayed times (the admin embed, announcements, the digest, and the
+  "Arrival" line in event descriptions) are shown in Pacific time —
+  `EVENT_TIME_ZONE` in `format.ts`.
 - Only meaningful field changes (title, start/end time, location,
   description) trigger an "EVENT UPDATE" — incidental Calendar metadata
   touches are ignored, so `#events` doesn't get noisy.
