@@ -126,8 +126,10 @@ bi-weekly on/off toggle.
     ```
     `sendEventDigest` runs weekly but only actually sends every other
     invocation (a Firestore-backed toggle) — a real "every 2 weeks" cron
-    schedule doesn't exist, so this is the standard workaround. Pass
-    `?force=true` to its URL to bypass the skip when testing manually.
+    schedule doesn't exist, so this is the standard workaround. For a manual
+    test, pass `?to=<your email>` to send just to yourself, or
+    `?force=true` to send to the real list off-schedule; neither changes
+    the toggle, so testing never shifts the schedule.
 
 ## Testing
 

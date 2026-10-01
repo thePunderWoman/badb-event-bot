@@ -14,18 +14,19 @@ const CALENDAR_VIEW_URL = "https://calendar.google.com/calendar/embed?src=" + en
 
 // Runs weekly via Cloud Scheduler but only actually sends every other run,
 // giving a true bi-weekly cadence without relying on fragile day-of-month
-// cron math (cron has no native "every 2 weeks"). The toggle only flips
-// after a successful run, so a mid-run failure doesn't burn a cycle — the
-// next scheduled run will retry instead of skipping. Pass ?force=true to
-// bypass the skip for manual testing (doesn't touch the toggle either way).
+// cron math (cron has no native "every 2 weeks"). `dueNext` alternates on
+// every scheduled run: a sent week sets it false, a skipped week sets it
+// back to true. It's only written after a run finishes, so a mid-run
+// failure doesn't burn a cycle — the next scheduled run retries instead.
+// Manual runs (?force=true, or ?to=<email> for a test send) always send and
+// never read or change it, so testing can't knock the schedule off.
 async function isDueThisRun(): Promise<boolean> {
   const snap = await DIGEST_STATE_DOC.get();
   return snap.data()?.dueNext !== false; // defaults to true if the doc doesn't exist yet
 }
 
-async function flipDueState(): Promise<void> {
-  const dueNow = await isDueThisRun();
-  await DIGEST_STATE_DOC.set({ dueNext: !dueNow }, { merge: true });
+async function setDueNext(dueNext: boolean): Promise<void> {
+  await DIGEST_STATE_DOC.set({ dueNext }, { merge: true });
 }
 
 function escapeHtml(text: string): string {
@@ -110,8 +111,14 @@ http("sendEventDigest", async (req: Request, res: Response) => {
     return;
   }
 
-  const force = req.query?.force === "true";
-  if (!force && !(await isDueThisRun())) {
+  // ?to=<email> overrides the recipient for manual testing, so a test run
+  // never actually reaches the real mailing list.
+  const testRecipient = typeof req.query?.to === "string" ? req.query.to : undefined;
+  const recipient = testRecipient || MAILING_LIST_ADDRESS;
+  const isScheduledRun = req.query?.force !== "true" && !testRecipient;
+
+  if (isScheduledRun && !(await isDueThisRun())) {
+    await setDueNext(true);
     res.status(200).send("skipped — not due this week");
     return;
   }
@@ -129,7 +136,7 @@ http("sendEventDigest", async (req: Request, res: Response) => {
   if (events.length === 0) {
     // Nothing to report — still counts as this cycle's run so the
     // bi-weekly cadence stays on schedule, just with nothing sent.
-    if (!force) await flipDueState();
+    if (isScheduledRun) await setDueNext(false);
     res.status(200).send("skipped — no upcoming events");
     return;
   }
@@ -137,16 +144,11 @@ http("sendEventDigest", async (req: Request, res: Response) => {
   const plainTextBody = buildPlainTextBody(events);
   const subject = "Upcoming Bay Area Droid Builder Events";
 
-  // ?to=<email> overrides the recipient for manual testing, so a test run
-  // never actually reaches the real mailing list.
-  const testRecipient = typeof req.query?.to === "string" ? req.query.to : undefined;
-  const recipient = testRecipient || MAILING_LIST_ADDRESS;
-
   await postChannelMessage(announcementChannelId, {
     embeds: [{ title: "📋 Upcoming Events", description: plainTextBody, color: 0x8a2be2 }],
   });
   await sendDigestEmail(subject, plainTextBody, buildEmailHtml(events), recipient);
 
-  if (!force) await flipDueState();
+  if (isScheduledRun) await setDueNext(false);
   res.status(200).send(`sent digest with ${events.length} event(s) to ${recipient}`);
 });
